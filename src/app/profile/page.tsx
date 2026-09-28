@@ -34,10 +34,10 @@ export default async function ProfilePage({ searchParams }: ProfilePageProps) {
       <div className="mx-auto max-w-5xl">
         <nav className="flex flex-wrap items-center justify-between gap-4 border-b border-black/15 pb-5">
           <Link href="/" className="font-mono text-xs font-bold uppercase tracking-[0.24em]">
-            The Humor Project
+            AI Joke Lab
           </Link>
           <div className="flex items-center gap-3">
-            <Link href="/members" className="nav-pill">Members room</Link>
+            <Link href="/members" className="nav-pill">Neural lounge</Link>
             <form action="/auth/signout" method="post">
               <button className="nav-pill" type="submit">Sign out</button>
             </form>
@@ -55,13 +55,13 @@ export default async function ProfilePage({ searchParams }: ProfilePageProps) {
           </div>
           <div>
             <p className="font-mono text-xs font-bold uppercase tracking-[0.24em] text-[#e24d2a]">
-              Profile
+              Human profile
             </p>
             <h1 className="mt-4 text-5xl font-semibold tracking-[-0.06em] sm:text-6xl">
-              Make it yours.
+              Tune your parameters.
             </h1>
             <p className="mt-5 max-w-xl text-base leading-7 text-black/60">
-              Add the name you want fellow laugh-track members to see, plus a photo if you like.
+              Tell the model what to call you, then add a human-approved profile photo if you like.
             </p>
           </div>
         </header>
@@ -75,9 +75,9 @@ export default async function ProfilePage({ searchParams }: ProfilePageProps) {
 
           <div className="rounded-[1.75rem] border border-black/15 bg-white/65 p-6 shadow-[0_18px_50px_rgba(37,32,22,0.06)] sm:p-8">
             {welcome && (
-              <Notice tone="welcome">One last step: add your first and last name to enter the members room.</Notice>
+              <Notice tone="welcome">One last step: add your first and last name to enter the neural lounge.</Notice>
             )}
-            {saved && <Notice tone="success">Profile saved. Your member card is ready.</Notice>}
+            {saved && <Notice tone="success">Parameters saved. Your neural lounge pass is ready.</Notice>}
             {error && <Notice tone="error">{error}</Notice>}
 
             <form action={updateProfile} className="mt-2 grid gap-6" encType="multipart/form-data">

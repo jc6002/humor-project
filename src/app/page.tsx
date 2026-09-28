@@ -29,7 +29,7 @@ async function getJokes(): Promise<JokeResult> {
   const supabase = await createClient();
 
   const { data, error } = await supabase
-    .from("jokes")
+    .from("ai_jokes")
     .select("id, setup, punchline, category, author")
     .order("id", { ascending: true });
 
@@ -51,22 +51,22 @@ export default async function Home({ searchParams }: HomeProps) {
   const user = authData.user;
 
   return (
-    <main className="min-h-screen overflow-hidden bg-[#f5f0e5] text-[#1d1d1b]">
+    <main className="min-h-screen overflow-hidden bg-[#080b16] text-[#eef2ff]">
       <div className="mx-auto w-full max-w-6xl px-5 py-8 sm:px-8 sm:py-12 lg:px-10">
-        <nav className="flex flex-wrap items-center justify-between gap-4 border-b border-black/15 pb-5">
+        <nav className="flex flex-wrap items-center justify-between gap-4 border-b border-white/15 pb-5">
           <p className="font-mono text-xs font-bold uppercase tracking-[0.24em]">
-            The Humor Project
+            AI Joke Lab
           </p>
           <div className="flex items-center gap-3">
-            <p className="rounded-full border border-black/15 bg-white/55 px-4 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-black/60">
-              Week 3 · Auth
+            <p className="rounded-full border border-[#7c5cff]/40 bg-[#7c5cff]/10 px-4 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-[#b9abff]">
+              Week 3 · AI Mode
             </p>
             {user ? (
-              <Link href="/members" className="nav-pill bg-[#1d1d1b] text-white">
-                Members room
+              <Link href="/members" className="nav-pill border-white/20 bg-[#eef2ff] text-[#080b16]">
+                Neural lounge
               </Link>
             ) : (
-              <Link href="/auth/signin" className="nav-pill bg-[#1d1d1b] text-white">
+              <Link href="/auth/signin" className="nav-pill border-white/20 bg-[#eef2ff] text-[#080b16]">
                 Sign in with Google
               </Link>
             )}
@@ -74,44 +74,45 @@ export default async function Home({ searchParams }: HomeProps) {
         </nav>
 
         {params.login === "required" && (
-          <div className="mt-6 rounded-2xl border border-[#6552d9]/25 bg-[#6552d9]/10 px-5 py-4 text-sm text-[#4433aa]">
-            Sign in with Google to open that members-only page.
+          <div className="mt-6 rounded-2xl border border-[#7c5cff]/35 bg-[#7c5cff]/10 px-5 py-4 text-sm text-[#c9c0ff]">
+            Sign in with Google to enter the neural lounge.
           </div>
         )}
         {params.authError === "signin" && (
-          <div className="mt-6 rounded-2xl border border-[#e24d2a]/25 bg-[#e24d2a]/10 px-5 py-4 text-sm text-[#9f3219]">
+          <div className="mt-6 rounded-2xl border border-[#ff6b8a]/30 bg-[#ff6b8a]/10 px-5 py-4 text-sm text-[#ffb4c3]">
             Google sign-in is not configured yet. Check the Supabase provider and redirect settings.
           </div>
         )}
 
-        <header className="grid gap-8 border-b border-black/15 py-14 md:grid-cols-[1fr_0.42fr] md:items-end md:py-20">
+        <header className="relative grid gap-8 overflow-hidden border-b border-white/15 py-14 md:grid-cols-[1fr_0.42fr] md:items-end md:py-20">
+          <div className="pointer-events-none absolute right-0 top-8 h-48 w-48 rounded-full bg-[#39d9ff]/15 blur-3xl" />
           <div>
-            <p className="mb-5 font-mono text-xs font-bold uppercase tracking-[0.28em] text-[#e24d2a]">
-              A tiny database of big laughs
+            <p className="mb-5 font-mono text-xs font-bold uppercase tracking-[0.28em] text-[#63e6ff]">
+              Humor, hallucinated responsibly
             </p>
             <h1 className="max-w-4xl text-6xl font-semibold leading-[0.88] tracking-[-0.065em] sm:text-7xl lg:text-8xl">
-              The Laugh
-              <span className="block text-[#6552d9]">List.</span>
+              Prompt.
+              <span className="block bg-gradient-to-r from-[#8b7cff] via-[#d27cff] to-[#63e6ff] bg-clip-text text-transparent">Punchline.</span>
+              Repeat.
             </h1>
           </div>
-          <p className="max-w-sm text-base leading-7 text-black/60 md:pb-1">
-            A growing collection of setups and punchlines, fetched live from a
-            Supabase database.
+          <p className="max-w-sm text-base leading-7 text-white/55 md:pb-1">
+            A live collection of AI, LLM, robot, and agent jokes fetched from a dedicated Supabase dataset.
           </p>
         </header>
 
         <section aria-labelledby="collection-heading" className="py-10 sm:py-14">
           <div className="mb-8 flex items-end justify-between gap-4">
             <div>
-              <p className="font-mono text-[11px] font-bold uppercase tracking-[0.22em] text-black/45">
-                Collection 001
+              <p className="font-mono text-[11px] font-bold uppercase tracking-[0.22em] text-[#63e6ff]">
+                Model output · Batch 001
               </p>
               <h2 id="collection-heading" className="mt-2 text-2xl font-semibold tracking-[-0.04em]">
-                Fresh from the database
+                Fresh from the latent space
               </h2>
             </div>
             {result.status === "ready" && (
-              <p className="font-mono text-xs font-bold uppercase tracking-[0.18em] text-black/45">
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.18em] text-white/45">
                 {jokes.length} {jokes.length === 1 ? "entry" : "entries"}
               </p>
             )}
@@ -121,14 +122,14 @@ export default async function Home({ searchParams }: HomeProps) {
             <StatusCard
               eyebrow="Setup needed"
               title="Connect the database"
-              body="Add the Supabase URL and anon key to the environment, then this collection will appear automatically."
+              body="Add the Supabase URL and anon key to the environment, then the AI joke batch will appear automatically."
             />
           )}
 
           {result.status === "error" && (
             <StatusCard
               eyebrow="Connection note"
-              title="The jokes took five"
+              title="The model timed out"
               body={`Supabase returned: ${result.message}`}
             />
           )}
@@ -136,8 +137,8 @@ export default async function Home({ searchParams }: HomeProps) {
           {result.status === "ready" && jokes.length === 0 && (
             <StatusCard
               eyebrow="Empty collection"
-              title="Quiet room, for now"
-              body="Add the first row to the jokes table in Supabase and it will show up here."
+              title="No output tokens yet"
+              body="Add the first row to the ai_jokes table in Supabase and it will show up here."
             />
           )}
 
@@ -146,25 +147,25 @@ export default async function Home({ searchParams }: HomeProps) {
               {jokes.map((joke, index) => (
                 <li
                   key={joke.id}
-                  className="group flex min-h-72 flex-col justify-between rounded-[1.75rem] border border-black/15 bg-white/65 p-6 shadow-[0_18px_50px_rgba(37,32,22,0.06)] transition duration-300 hover:-translate-y-1 hover:bg-white sm:p-8"
+                  className="group flex min-h-72 flex-col justify-between rounded-[1.75rem] border border-white/15 bg-white/[0.055] p-6 shadow-[0_24px_80px_rgba(0,0,0,0.3)] backdrop-blur transition duration-300 hover:-translate-y-1 hover:border-[#7c5cff]/60 hover:bg-white/[0.085] sm:p-8"
                 >
                   <div>
                     <div className="mb-8 flex items-center justify-between gap-4">
-                      <span className="font-mono text-xs font-bold text-[#6552d9]">
+                      <span className="font-mono text-xs font-bold text-[#63e6ff]">
                         #{String(index + 1).padStart(2, "0")}
                       </span>
-                      <span className="rounded-full bg-[#f1d36b]/55 px-3 py-1.5 font-mono text-[10px] font-bold uppercase tracking-[0.16em]">
+                      <span className="rounded-full border border-[#9b87ff]/30 bg-[#7c5cff]/15 px-3 py-1.5 font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-[#c9c0ff]">
                         {joke.category}
                       </span>
                     </div>
                     <p className="text-xl font-medium leading-8 tracking-[-0.025em] sm:text-2xl">
                       {joke.setup}
                     </p>
-                    <p className="mt-5 border-l-2 border-[#e24d2a] pl-4 text-base leading-7 text-black/65">
+                    <p className="mt-5 border-l-2 border-[#d27cff] pl-4 text-base leading-7 text-white/60">
                       {joke.punchline}
                     </p>
                   </div>
-                  <p className="mt-8 font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-black/40">
+                  <p className="mt-8 font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-white/35">
                     Submitted by {joke.author}
                   </p>
                 </li>
@@ -173,9 +174,9 @@ export default async function Home({ searchParams }: HomeProps) {
           )}
         </section>
 
-        <footer className="flex flex-col gap-2 border-t border-black/15 py-6 font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-black/45 sm:flex-row sm:items-center sm:justify-between">
-          <p>Next.js × Supabase Auth × Vercel</p>
-          <p>Designing for GenAI · 2026</p>
+        <footer className="flex flex-col gap-2 border-t border-white/15 py-6 font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-white/40 sm:flex-row sm:items-center sm:justify-between">
+          <p>Next.js × Supabase Auth × AI Humor</p>
+          <p>Human reviewed · Model approved</p>
         </footer>
       </div>
     </main>
@@ -192,12 +193,12 @@ function StatusCard({
   body: string;
 }) {
   return (
-    <div className="rounded-[1.75rem] border border-dashed border-black/20 bg-white/45 p-8 sm:p-10">
-      <p className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-[#e24d2a]">
+    <div className="rounded-[1.75rem] border border-dashed border-white/20 bg-white/[0.05] p-8 sm:p-10">
+      <p className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-[#63e6ff]">
         {eyebrow}
       </p>
       <h3 className="mt-3 text-3xl font-semibold tracking-[-0.045em]">{title}</h3>
-      <p className="mt-3 max-w-2xl leading-7 text-black/60">{body}</p>
+      <p className="mt-3 max-w-2xl leading-7 text-white/55">{body}</p>
     </div>
   );
 }

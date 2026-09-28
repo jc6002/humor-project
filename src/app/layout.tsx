@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "The Laugh List | The Humor Project",
-  description: "A members-ready collection of humor, powered by Next.js and Supabase Auth.",
+  title: "AI Joke Lab | The Humor Project",
+  description: "A members-ready lab for AI, robot, and LLM humor, powered by Next.js and Supabase Auth.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
