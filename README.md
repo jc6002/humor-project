@@ -1,36 +1,53 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# The Laugh List — Week 3 Auth
 
-## Getting Started
+This Next.js app extends the Week 2 Supabase joke list with Google authentication, user profiles, avatar uploads, and a members-only route.
 
-First, run the development server:
+## What is included
+
+- Google OAuth with a PKCE callback at `/auth/callback`
+- Cookie-based server authentication using `@supabase/ssr`
+- A `profiles` row created automatically for each new `auth.users` row
+- A first-login prompt for first and last name
+- Profile editing and image uploads to a public `avatars` Storage bucket
+- Server- and proxy-protected `/members` and `/profile` routes
+- Row Level Security policies that limit profile edits and uploads to the signed-in user
+
+## Local setup
+
+Install dependencies and create `.env.local`:
+
+```bash
+npm install
+```
+
+```env
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=your-anon-key
+```
+
+Run [`supabase/schema.sql`](supabase/schema.sql) in the Supabase SQL Editor. The script is safe to run more than once.
+
+In Supabase Authentication:
+
+1. Enable Google and enter the Google OAuth client ID and secret.
+2. Add `http://localhost:3000/auth/callback` to the redirect allow list for local testing.
+3. Add the production `/auth/callback` URL and the appropriate Vercel preview wildcard.
+
+In the Google OAuth web client, use the Supabase callback shown on the Google provider panel, which looks like:
+
+```text
+https://YOUR_PROJECT_REF.supabase.co/auth/v1/callback
+```
+
+Start the app:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Checks
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+npm run lint
+npm run build
+```

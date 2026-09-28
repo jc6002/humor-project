@@ -1,4 +1,6 @@
-import { createClient } from "@supabase/supabase-js";
+import Link from "next/link";
+import { createClient } from "@/lib/supabase/server";
+import { hasSupabaseEnv } from "@/lib/supabase/env";
 
 type Joke = {
   id: number;
@@ -15,21 +17,16 @@ type JokeResult =
 
 export const dynamic = "force-dynamic";
 
-async function getJokes(): Promise<JokeResult> {
-  const url = process.env.SUPABASE_URL;
-  const anonKey = process.env.SUPABASE_ANON_KEY;
+type HomeProps = {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+};
 
-  if (!url || !anonKey) {
+async function getJokes(): Promise<JokeResult> {
+  if (!hasSupabaseEnv()) {
     return { status: "missing-config" };
   }
 
-  const supabase = createClient(url, anonKey, {
-    auth: {
-      autoRefreshToken: false,
-      detectSessionInUrl: false,
-      persistSession: false,
-    },
-  });
+  const supabase = await createClient();
 
   const { data, error } = await supabase
     .from("jokes")
@@ -43,21 +40,49 @@ async function getJokes(): Promise<JokeResult> {
   return { status: "ready", jokes: data ?? [] };
 }
 
-export default async function Home() {
+export default async function Home({ searchParams }: HomeProps) {
+  const params = await searchParams;
   const result = await getJokes();
   const jokes = result.status === "ready" ? result.jokes : [];
+  const supabase = hasSupabaseEnv() ? await createClient() : null;
+  const { data: authData } = supabase
+    ? await supabase.auth.getUser()
+    : { data: { user: null } };
+  const user = authData.user;
 
   return (
     <main className="min-h-screen overflow-hidden bg-[#f5f0e5] text-[#1d1d1b]">
       <div className="mx-auto w-full max-w-6xl px-5 py-8 sm:px-8 sm:py-12 lg:px-10">
-        <nav className="flex items-center justify-between border-b border-black/15 pb-5">
+        <nav className="flex flex-wrap items-center justify-between gap-4 border-b border-black/15 pb-5">
           <p className="font-mono text-xs font-bold uppercase tracking-[0.24em]">
             The Humor Project
           </p>
-          <p className="rounded-full border border-black/15 bg-white/55 px-4 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-black/60">
-            Week 2 · Live data
-          </p>
+          <div className="flex items-center gap-3">
+            <p className="rounded-full border border-black/15 bg-white/55 px-4 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-black/60">
+              Week 3 · Auth
+            </p>
+            {user ? (
+              <Link href="/members" className="nav-pill bg-[#1d1d1b] text-white">
+                Members room
+              </Link>
+            ) : (
+              <Link href="/auth/signin" className="nav-pill bg-[#1d1d1b] text-white">
+                Sign in with Google
+              </Link>
+            )}
+          </div>
         </nav>
+
+        {params.login === "required" && (
+          <div className="mt-6 rounded-2xl border border-[#6552d9]/25 bg-[#6552d9]/10 px-5 py-4 text-sm text-[#4433aa]">
+            Sign in with Google to open that members-only page.
+          </div>
+        )}
+        {params.authError === "signin" && (
+          <div className="mt-6 rounded-2xl border border-[#e24d2a]/25 bg-[#e24d2a]/10 px-5 py-4 text-sm text-[#9f3219]">
+            Google sign-in is not configured yet. Check the Supabase provider and redirect settings.
+          </div>
+        )}
 
         <header className="grid gap-8 border-b border-black/15 py-14 md:grid-cols-[1fr_0.42fr] md:items-end md:py-20">
           <div>
@@ -149,7 +174,7 @@ export default async function Home() {
         </section>
 
         <footer className="flex flex-col gap-2 border-t border-black/15 py-6 font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-black/45 sm:flex-row sm:items-center sm:justify-between">
-          <p>Next.js × Supabase × Vercel</p>
+          <p>Next.js × Supabase Auth × Vercel</p>
           <p>Designing for GenAI · 2026</p>
         </footer>
       </div>

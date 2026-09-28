@@ -17,3 +17,31 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+button,
+a,
+input {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button,
+input[type="file"] {
+  cursor: pointer;
+}
+
+.nav-pill {
+  border: 1px solid rgb(0 0 0 / 0.15);
+  border-radius: 999px;
+  padding: 0.5rem 1rem;
+  font-family: "Courier New", Courier, monospace;
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.nav-pill:hover {
+  background: #1d1d1b;
+  color: white;
+}

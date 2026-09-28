@@ -9,14 +9,16 @@ create table if not exists public.jokes (
 
 alter table public.jokes enable row level security;
 
+drop policy if exists "Anyone can read jokes" on public.jokes;
 create policy "Anyone can read jokes"
 on public.jokes
 for select
-to anon
+to anon, authenticated
 using (true);
 
 insert into public.jokes (setup, punchline, category, author)
-values
+select seed.setup, seed.punchline, seed.category, seed.author
+from (values
   (
     'Why did the designer bring a ladder to the brainstorm?',
     'They wanted to take the idea to the next level.',
@@ -40,4 +42,110 @@ values
     'Now it sends me errors in real time.',
     'Technology',
     'The Humor Project'
-  );
+  )
+) as seed(setup, punchline, category, author)
+where not exists (
+  select 1 from public.jokes where jokes.setup = seed.setup
+);
+
+-- Week 3: one public profile row for every authenticated user.
+create table if not exists public.profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  first_name text,
+  last_name text,
+  avatar_url text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.profiles enable row level security;
+
+drop policy if exists "Users can read their own profile" on public.profiles;
+create policy "Users can read their own profile"
+on public.profiles
+for select
+to authenticated
+using ((select auth.uid()) = id);
+
+drop policy if exists "Users can create their own profile" on public.profiles;
+create policy "Users can create their own profile"
+on public.profiles
+for insert
+to authenticated
+with check ((select auth.uid()) = id);
+
+drop policy if exists "Users can update their own profile" on public.profiles;
+create policy "Users can update their own profile"
+on public.profiles
+for update
+to authenticated
+using ((select auth.uid()) = id)
+with check ((select auth.uid()) = id);
+
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer set search_path = ''
+as $$
+begin
+  insert into public.profiles (id)
+  values (new.id)
+  on conflict (id) do nothing;
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute procedure public.handle_new_user();
+
+-- Backfill profile rows for anyone who signed in before this migration.
+insert into public.profiles (id)
+select id from auth.users
+on conflict (id) do nothing;
+
+-- Store photos in Supabase Storage, never in the relational table itself.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'avatars',
+  'avatars',
+  true,
+  5242880,
+  array['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+)
+on conflict (id) do update set
+  public = excluded.public,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
+
+drop policy if exists "Avatar images are publicly viewable" on storage.objects;
+create policy "Avatar images are publicly viewable"
+on storage.objects
+for select
+to public
+using (bucket_id = 'avatars');
+
+drop policy if exists "Users can upload their own avatar" on storage.objects;
+create policy "Users can upload their own avatar"
+on storage.objects
+for insert
+to authenticated
+with check (
+  bucket_id = 'avatars'
+  and (storage.foldername(name))[1] = (select auth.uid()::text)
+);
+
+drop policy if exists "Users can update their own avatar" on storage.objects;
+create policy "Users can update their own avatar"
+on storage.objects
+for update
+to authenticated
+using (
+  bucket_id = 'avatars'
+  and (storage.foldername(name))[1] = (select auth.uid()::text)
+)
+with check (
+  bucket_id = 'avatars'
+  and (storage.foldername(name))[1] = (select auth.uid()::text)
+);
