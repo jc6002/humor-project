@@ -1,6 +1,16 @@
 import 'server-only';
 import { createHash } from 'node:crypto';
 
+export class ProviderError extends Error {
+  constructor(public provider:string,public code:string){super(`${provider}_${code}`);}
+}
+export function providerFailure(error:unknown,provider:string) {
+  const code=error instanceof ProviderError?error.code:error instanceof Error&&['TimeoutError','AbortError'].includes(error.name)?'timeout':'network';
+  const name=provider==='openai'?'GPT':'Gemini';
+  const reason=code==='429'?'is rate-limited or has exhausted its API quota':code==='401'||code==='403'?'could not authorize this request':code==='timeout'?'timed out':code==='invalid_output'?'returned an invalid joke format':code==='incomplete'?'did not complete its answer':code==='network'?'could not be reached':'is temporarily unavailable';
+  return {code:`${provider}_${code}`,message:`${name} ${reason}.`};
+}
+
 export function generationConfigured() {
   return ['OPENAI_API_KEY','GEMINI_API_KEY','OPENAI_MODEL','GEMINI_MODEL','SUPABASE_SERVICE_ROLE_KEY'].every(k=>Boolean(process.env[k]?.trim())) && process.env.GENERATION_ENABLED==='true';
 }
@@ -21,23 +31,26 @@ export async function generateJoke(provider:'openai'|'gemini',prompt:string) {
   const headers:Record<string,string>={'Content-Type':'application/json'};
   if(provider==='openai') headers.Authorization=`Bearer ${process.env.OPENAI_API_KEY}`;
   else headers['x-goog-api-key']=process.env.GEMINI_API_KEY!;
-  const body=provider==='openai'?{model,input:prompt,max_output_tokens:1024,reasoning:{effort:'none'},store:false}:
+  const schema={type:'object',properties:{setup:{type:'string'},punchline:{type:'string'}},required:['setup','punchline'],additionalProperties:false};
+  const body=provider==='openai'?{model,input:prompt,max_output_tokens:1024,reasoning:{effort:'none'},store:false,text:{format:{type:'json_schema',name:'joke',strict:true,schema}}}:
     {contents:[{parts:[{text:prompt}]}],generationConfig:{maxOutputTokens:1024,responseMimeType:'application/json',thinkingConfig:{thinkingLevel:'minimal'}}};
   const response=await fetch(url,{method:'POST',headers,body:JSON.stringify(body),signal:AbortSignal.timeout(45000),cache:'no-store'});
-  if(!response.ok) throw new Error(`${provider}_${response.status}`);
+  if(!response.ok) throw new ProviderError(provider,String(response.status));
   const data=await response.json();
   let text='';
   if(provider==='openai') {
-    if(data.status!=='completed') throw new Error('openai_incomplete');
+    if(data.status!=='completed') throw new ProviderError(provider,'incomplete');
     for(const output of data.output??[]) for(const content of output.content??[]) if(content.type==='output_text') text+=content.text;
   } else {
     const candidate=data.candidates?.[0];
-    if(candidate?.finishReason!=='STOP') throw new Error('gemini_incomplete');
+    if(candidate?.finishReason!=='STOP') throw new ProviderError(provider,'incomplete');
     text=(candidate?.content?.parts??[]).filter((p:{thought?:boolean})=>!p.thought).map((p:{text?:string})=>p.text??'').join('');
   }
   // Include request configuration and actual model version in the ranked participant.
   const resolved=provider==='openai'?(data.model??model):(data.modelVersion??model);
-  const configVersion='ai-roast-v1-'+createHash('sha256').update(JSON.stringify({provider,model,limit:1024,reasoning:provider==='openai'?'none':'minimal',format:provider==='gemini'?'json':'prompt-json'})).digest('hex').slice(0,10);
-  return {...parseJoke(text),provider,model:resolved,name:provider==='openai'?'GPT':'Gemini',configVersion,
+  const configVersion='ai-roast-v1-'+createHash('sha256').update(JSON.stringify({provider,model,limit:1024,reasoning:provider==='openai'?'none':'minimal',format:provider==='gemini'?'json':'strict-json'})).digest('hex').slice(0,10);
+  let joke;
+  try {joke=parseJoke(text);} catch {throw new ProviderError(provider,'invalid_output');}
+  return {...joke,provider,model:resolved,name:provider==='openai'?'GPT':'Gemini',configVersion,
     usage:provider==='openai'?data.usage??{}:data.usageMetadata??{},latencyMs:Date.now()-start,requestId:response.headers.get('x-request-id')??data.responseId??null};
 }

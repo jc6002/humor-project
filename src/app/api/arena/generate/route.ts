@@ -1,5 +1,5 @@
 import {adminClient,session,checkOrigin,failure,UUID} from '@/lib/arena/server';
-import {buildPrompt,generateJoke,generationConfigured} from '@/lib/arena/providers';
+import {buildPrompt,generateJoke,generationConfigured,providerFailure} from '@/lib/arena/providers';
 import {TARGETS,ANGLES} from '@/lib/arena/types';
 export const maxDuration=60;
 export async function POST(request:Request) {
@@ -17,11 +17,13 @@ export async function POST(request:Request) {
     if(error) throw new Error(error.message);
     if(reservation.existing) return Response.json({id:reservation.id,status:reservation.status});
     const outcomes=await Promise.allSettled([generateJoke('openai',prompt),generateJoke('gemini',prompt)]);
-    const failed=outcomes.some(result=>result.status==='rejected');
+    const failures=outcomes.flatMap((result,i)=>result.status==='rejected'?[providerFailure(result.reason,i===0?'openai':'gemini')]:[]);
+    const failed=failures.length>0;
     const outputs=outcomes.flatMap(result=>result.status==='fulfilled'?[result.value]:[]);
-    const {error:saveError}=await db.rpc('arena_finish',{p_battle:reservation.id,p_outputs:outputs,p_error:failed?'provider_failed':null});
+    if(failed) console.error('arena_generation_failed',{battleId:reservation.id,codes:failures.map(f=>f.code)});
+    const {error:saveError}=await db.rpc('arena_finish',{p_battle:reservation.id,p_outputs:outputs,p_error:failed?failures.map(f=>f.code).join(','):null});
     if(saveError) throw new Error('The result could not be saved. Check your history before retrying.');
-    if(failed) throw new Error('One of the models could not finish. Your successful-generation credit was restored; this attempt still counts toward the safety limit.');
+    if(failed) throw new Error(`${failures.map(f=>f.message).join(' ')} No successful-generation credit was used. Please try again later or vote on existing battles. Reference: ${reservation.id.slice(0,8)}.`);
     return Response.json({id:reservation.id,status:'ready'});
   } catch(error) {return failure(error);}
 }
