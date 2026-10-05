@@ -1,53 +1,37 @@
-# The Laugh List — Week 3 Auth
+# AI Joke Arena — Week 4
 
-This Next.js app extends the Week 2 Supabase joke list with Google authentication, user profiles, avatar uploads, and a members-only route.
+Independent Week 4 version on branch `week4-arena`, based on Week 3 commit `097c86c`. Google login and profiles are shared; Arena has additive tables and a separate Vercel project.
 
-## What is included
+## Features
 
-- Google OAuth with a PKCE callback at `/auth/callback`
-- Cookie-based server authentication using `@supabase/ssr`
-- A `profiles` row created automatically for each new `auth.users` row
-- A first-login prompt for first and last name
-- Profile editing and image uploads to a public `avatars` Storage bucket
-- Server- and proxy-protected `/members` and `/profile` routes
-- Row Level Security policies that limit profile edits and uploads to the signed-in user
+- Home: model Elo rankings and top community-rated AI roasts.
+- GPT and Gemini generate blind A/B pairs about AI models.
+- Five successful pairs per signed-in user per rolling hour; historical community voting does not consume generation credits.
+- One vote per user per battle; identities revealed after voting. Elo K=16; ties and both-unfunny votes count as draws.
+- Battles close after five votes or 24 hours. Top jokes require three decisive votes and a majority of wins, ordered by a smoothed win ratio.
+- Supabase stores prompts, outputs, votes, model versions, usage, and rating events. No seed votes.
 
-## Local setup
+## Setup
 
-Install dependencies and create `.env.local`:
+1. Run `npm install` and copy `.env.example` to `.env.local`.
+2. Configure Supabase and provider credentials on the server only.
+3. New databases: apply `supabase/schema.sql`, then `supabase/arena.sql`. Existing Week 3 database: apply only `supabase/arena.sql`.
+4. Add the deployment's `/auth/callback` to Supabase's existing redirect allowlist.
+5. Enable `arena_limits.enabled` and set `GENERATION_ENABLED=true` when ready.
+6. Run `npm run dev`.
 
-```bash
-npm install
-```
+Models: `gpt-6-luna` with reasoning off, and `gemini-3.1-flash-lite` with minimal thinking. Each request calls both providers once, with 1,024 output tokens maximum and no automatic retries.
 
-```env
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_ANON_KEY=your-anon-key
-```
+## Access and cost controls
 
-Run [`supabase/schema.sql`](supabase/schema.sql) in the Supabase SQL Editor. The script is safe to run more than once.
+All Arena tables enable RLS and revoke raw anonymous/authenticated access. Restricted database functions enforce authentication, atomic quotas, anonymous presentations, vote deduplication, and Elo transactions. Generation writes require the server-only service-role key.
 
-In Supabase Authentication:
+Initial site limits: 20 attempts per UTC day and 100 total attempts. Per account: five successful pairs per rolling hour, eight attempts per hour, one active request, and a 30-second cooldown. Failed calls count toward attempt limits. Request caps do not guarantee a currency spending cap; provider billing controls are separate. Limits can be adjusted in `arena_limits`.
 
-1. Enable Google and enter the Google OAuth client ID and secret.
-2. Add `http://localhost:3000/auth/callback` to the redirect allow list for local testing.
-3. Add the production `/auth/callback` URL and the appropriate Vercel preview wildcard.
+## Deployment
 
-In the Google OAuth web client, use the Supabase callback shown on the Google provider panel, which looks like:
+GitHub: https://github.com/jc6002/humor-project/tree/week4-arena
 
-```text
-https://YOUR_PROJECT_REF.supabase.co/auth/v1/callback
-```
+Separate Vercel project: `humor-project-week4`, published through the CLI. Configure variables from `.env.example` in Vercel and submit the immutable deployment URL to the course website.
 
-Start the app:
-
-```bash
-npm run dev
-```
-
-## Checks
-
-```bash
-npm run lint
-npm run build
-```
+See `AI_JOKE_ARENA_PLAN.md` for planning background. Isolated database checks are available through `npm run test:db`; they do not create production votes.

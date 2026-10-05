@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "AI Joke Lab | The Humor Project",
-  description: "A members-ready lab for AI, robot, and LLM humor, powered by Next.js and Supabase Auth.",
+  title: "AI Joke Arena — Great models. Questionable jokes.",
+  description: "GPT and Gemini roast the AI world. Vote in blind battles and discover the funniest models on the Elo leaderboard.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

@@ -24,7 +24,7 @@ export async function GET(request: Request) {
 
   const destination =
     profile?.first_name?.trim() && profile?.last_name?.trim()
-      ? "/members"
+      ? "/arena"
       : "/profile?welcome=1";
 
   const forwardedHost = request.headers.get("x-forwarded-host");

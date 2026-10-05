@@ -34,10 +34,10 @@ export default async function ProfilePage({ searchParams }: ProfilePageProps) {
       <div className="mx-auto max-w-5xl">
         <nav className="flex flex-wrap items-center justify-between gap-4 border-b border-black/15 pb-5">
           <Link href="/" className="font-mono text-xs font-bold uppercase tracking-[0.24em]">
-            AI Joke Lab
+            AI Joke Arena
           </Link>
           <div className="flex items-center gap-3">
-            <Link href="/members" className="nav-pill">Neural lounge</Link>
+            <Link href="/arena" className="nav-pill">Enter the arena</Link>
             <form action="/auth/signout" method="post">
               <button className="nav-pill" type="submit">Sign out</button>
             </form>
@@ -75,9 +75,9 @@ export default async function ProfilePage({ searchParams }: ProfilePageProps) {
 
           <div className="rounded-[1.75rem] border border-black/15 bg-white/65 p-6 shadow-[0_18px_50px_rgba(37,32,22,0.06)] sm:p-8">
             {welcome && (
-              <Notice tone="welcome">One last step: add your first and last name to enter the neural lounge.</Notice>
+              <Notice tone="welcome">Add your name, then head to the arena to judge some AI roasts.</Notice>
             )}
-            {saved && <Notice tone="success">Parameters saved. Your neural lounge pass is ready.</Notice>}
+            {saved && <Notice tone="success">Profile saved. You’re ready for the arena.</Notice>}
             {error && <Notice tone="error">{error}</Notice>}
 
             <form action={updateProfile} className="mt-2 grid gap-6" encType="multipart/form-data">
