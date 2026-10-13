@@ -2,20 +2,26 @@
 begin;
 create table if not exists public.arena_models (
   id uuid primary key default gen_random_uuid(), provider text not null check(provider in ('openai','gemini')),
-  api_model text not null, name text not null, config_version text not null default 'ai-roast-v1',
+  api_model text not null, name text not null, config_version text not null default 'ai-roast-v2',
   rating double precision not null default 1000, wins integer not null default 0,
   losses integer not null default 0, ties integer not null default 0, bad integer not null default 0,
+  canonical_id uuid references public.arena_models(id),
   unique(provider,api_model,config_version)
 );
+create unique index if not exists arena_models_identity
+on public.arena_models(provider,api_model) where canonical_id is null;
+
 create table if not exists public.arena_limits (
   id boolean primary key default true check(id), enabled boolean not null default false,
   daily_attempts integer not null default 20 check(daily_attempts between 0 and 10000),
   total_attempts integer not null default 100 check(total_attempts between 0 and 100000)
 );
 insert into public.arena_limits(id) values(true) on conflict do nothing;
+
 create table if not exists public.arena_accounts (
   user_id uuid primary key references auth.users(id) on delete cascade
 );
+
 create table if not exists public.arena_battles (
   id uuid primary key default gen_random_uuid(), user_id uuid not null references auth.users(id),
   request_id uuid not null, target text not null, angle text not null, context text not null default '',
@@ -25,17 +31,20 @@ create table if not exists public.arena_battles (
   error_code text, unique(user_id,request_id)
 );
 create index if not exists arena_battles_user_time on public.arena_battles(user_id,created_at);
+
 create table if not exists public.arena_generations (
   id uuid primary key default gen_random_uuid(), battle_id uuid not null references public.arena_battles(id),
   model_id uuid not null references public.arena_models(id), setup text not null, punchline text not null,
-  usage jsonb not null default '{}', latency_ms integer, request_id text,
+  config_version text, usage jsonb not null default '{}', latency_ms integer, request_id text,
   unique(battle_id,model_id)
 );
+
 create table if not exists public.arena_presentations (
   user_id uuid not null references auth.users(id), battle_id uuid not null references public.arena_battles(id),
   left_id uuid not null references public.arena_generations(id), right_id uuid not null references public.arena_generations(id),
   primary key(user_id,battle_id), check(left_id<>right_id)
 );
+
 create table if not exists public.arena_votes (
   id uuid primary key default gen_random_uuid(), user_id uuid not null references auth.users(id),
   battle_id uuid not null references public.arena_battles(id),
@@ -43,6 +52,7 @@ create table if not exists public.arena_votes (
   left_id uuid not null references public.arena_generations(id), right_id uuid not null references public.arena_generations(id),
   created_at timestamptz not null default now(), unique(user_id,battle_id)
 );
+
 create table if not exists public.arena_rating_events (
   seq bigint generated always as identity primary key, vote_id uuid not null unique references public.arena_votes(id),
   left_model uuid not null references public.arena_models(id), right_model uuid not null references public.arena_models(id),
@@ -93,12 +103,12 @@ begin
   if n>=5 then raise exception 'Your 5 hourly generations are used. Vote on community battles while they recover.'; end if;
   select count(*),max(created_at) into n,latest from public.arena_battles where user_id=p_user and created_at>now()-interval '1 hour';
   if n>=8 then raise exception 'Hourly attempt limit reached. Please try again later.'; end if;
-  if latest>now()-interval '30 seconds' then raise exception 'Please wait 30 seconds between generations.'; end if;
+  if latest>now()-interval '3 seconds' then raise exception 'Please wait a moment between generations.'; end if;
   select count(*) into n from public.arena_battles;
   if n>=lim.total_attempts then raise exception 'The arena generation budget is used. Existing battles are still open for votes.'; end if;
   select count(*) into n from public.arena_battles where created_at>=date_trunc('day',now() at time zone 'UTC') at time zone 'UTC';
   if n>=lim.daily_attempts then raise exception 'Today’s arena generation budget is used. You can still vote.'; end if;
-  if length(p_context)>200 or length(p_prompt)>3000 then raise exception 'Prompt too long'; end if;
+  if length(p_context)>300 or length(p_prompt)>4000 then raise exception 'Prompt too long'; end if;
   insert into public.arena_battles(user_id,request_id,target,angle,context,prompt)
   values(p_user,p_request,p_target,p_angle,p_context,p_prompt) returning * into b;
   return jsonb_build_object('id',b.id,'existing',false,'status',b.status);
@@ -119,33 +129,39 @@ begin
     if length(o->>'setup') not between 1 and 800 or length(o->>'punchline') not between 1 and 800 then raise exception 'Invalid joke'; end if;
     insert into public.arena_models(provider,api_model,name,config_version)
     values(o->>'provider',o->>'model',o->>'name',o->>'configVersion')
-    on conflict(provider,api_model,config_version) do update set name=excluded.name returning id into mid;
-    insert into public.arena_generations(battle_id,model_id,setup,punchline,usage,latency_ms,request_id)
-    values(p_battle,mid,o->>'setup',o->>'punchline',coalesce(o->'usage','{}'),(o->>'latencyMs')::integer,o->>'requestId');
+    on conflict(provider,api_model) where canonical_id is null do update set name=excluded.name returning id into mid;
+    insert into public.arena_generations(battle_id,model_id,config_version,setup,punchline,usage,latency_ms,request_id)
+    values(p_battle,mid,o->>'configVersion',o->>'setup',o->>'punchline',coalesce(o->'usage','{}'),(o->>'latencyMs')::integer,o->>'requestId');
   end loop;
   update public.arena_battles set status='ready',completed_at=now(),closes_at=now()+interval '24 hours' where id=p_battle;
 end $$;
 
-create or replace function public.arena_battle(p_id uuid default null,p_skip uuid default null)
+drop function if exists public.arena_battle(uuid,uuid);
+drop function if exists public.arena_battle(uuid,uuid[]);
+create or replace function public.arena_battle(p_id uuid default null,p_skip uuid[] default null)
 returns jsonb language plpgsql security definer set search_path = '' as $$
-declare u uuid:=auth.uid(); b public.arena_battles; p public.arena_presentations; v public.arena_votes; ids uuid[]; payload jsonb;
+declare u uuid:=auth.uid(); b public.arena_battles; p public.arena_presentations; v public.arena_votes; ev public.arena_rating_events; ids uuid[]; payload jsonb;
 begin
   if u is null then raise exception 'Sign in to continue'; end if;
   if p_id is null then
-    select * into b from public.arena_battles x where status='ready' and closes_at>now() and votes<5
-      and (p_skip is null or x.id<>p_skip)
+    -- Prioritize battles that already have votes (votes desc) so existing battles quickly reach 3 votes and graduate!
+    select * into b from public.arena_battles x where status='ready' and closes_at>now() and votes<3
+      and (p_skip is null or not (x.id = any(p_skip)))
       and not exists(select 1 from public.arena_votes y where y.battle_id=x.id and y.user_id=u)
-    order by votes asc,created_at asc limit 1;
+    order by votes desc, random() limit 1;
   else
     select * into b from public.arena_battles where id=p_id;
   end if;
   if b.id is null then return null; end if;
   select * into v from public.arena_votes where battle_id=b.id and user_id=u;
+  if v.id is not null then
+    select * into ev from public.arena_rating_events where vote_id=v.id;
+  end if;
   if b.status in ('generating','failed') then
     if b.user_id<>u then return null; end if;
     return jsonb_build_object('id',b.id,'status',case when b.status='generating' and b.created_at<=now()-interval '3 minutes' then 'failed' else b.status end);
   end if;
-  if v.id is null and (b.status='closed' or b.closes_at<=now() or b.votes>=5) then return jsonb_build_object('id',b.id,'status','closed'); end if;
+  if v.id is null and (b.status='closed' or b.closes_at<=now() or b.votes>=3) then return jsonb_build_object('id',b.id,'status','closed'); end if;
   select * into p from public.arena_presentations where user_id=u and battle_id=b.id;
   if not found then
     select array_agg(id order by random()) into ids from public.arena_generations where battle_id=b.id;
@@ -154,10 +170,16 @@ begin
     select * into p from public.arena_presentations where user_id=u and battle_id=b.id;
   end if;
   select jsonb_object_agg(case when g.id=p.left_id then 'left' else 'right' end,
-    jsonb_build_object('setup',g.setup,'punchline',g.punchline)||case when v.id is not null then jsonb_build_object('model',m.name,'version',m.api_model,'rating',m.rating) else '{}'::jsonb end)
+    jsonb_build_object('setup',g.setup,'punchline',g.punchline)||
+    case when v.id is not null then jsonb_build_object(
+      'model',m.name,
+      'version',m.api_model,
+      'rating',m.rating,
+      'delta',case when ev.vote_id is not null then (case when g.id=p.left_id then ev.left_after-ev.left_before else ev.right_after-ev.right_before end) else null end
+    ) else '{}'::jsonb end)
   into payload from public.arena_generations g join public.arena_models m on m.id=g.model_id where g.id in (p.left_id,p.right_id);
   return jsonb_build_object('id',b.id,'status','ready','target',b.target,'angle',b.angle,'context',b.context,'choice',v.choice,
-    'prompt',case when v.id is not null then b.prompt else null end)||payload;
+    'votes',b.votes,'prompt',case when v.id is not null then b.prompt else null end)||payload;
 end $$;
 
 create or replace function public.arena_vote(p_battle uuid,p_choice text)
@@ -170,7 +192,7 @@ begin
   select * into b from public.arena_battles where id=p_battle for update;
   if not found then raise exception 'Battle not found'; end if;
   if exists(select 1 from public.arena_votes where battle_id=p_battle and user_id=u) then return public.arena_battle(p_battle); end if;
-  if b.status<>'ready' or b.votes>=5 or b.closes_at<=now() then raise exception 'This battle has closed. Try another one.'; end if;
+  if b.status<>'ready' or b.votes>=3 or b.closes_at<=now() then raise exception 'This battle has closed. Try another one.'; end if;
   select * into p from public.arena_presentations where battle_id=p_battle and user_id=u;
   if not found then raise exception 'Open this battle before voting'; end if;
   select model_id into lm from public.arena_generations where id=p.left_id;
@@ -186,7 +208,7 @@ begin
   update public.arena_models set rating=rr-delta,wins=wins+case when score=0 then 1 else 0 end,
     losses=losses+case when score=1 then 1 else 0 end,ties=ties+case when score=0.5 then 1 else 0 end,bad=bad+case when p_choice='bad' then 1 else 0 end where id=rm;
   insert into public.arena_rating_events(vote_id,left_model,right_model,left_before,right_before,left_after,right_after) values(v.id,lm,rm,lr,rr,lr+delta,rr-delta);
-  update public.arena_battles set votes=votes+1,status=case when votes+1>=5 then 'closed' else 'ready' end where id=p_battle;
+  update public.arena_battles set votes=votes+1,status=case when votes+1>=3 then 'closed' else 'ready' end where id=p_battle;
   return public.arena_battle(p_battle);
 end $$;
 
@@ -196,7 +218,7 @@ language sql stable security definer set search_path = '' as $$
  'models',coalesce((select jsonb_agg(to_jsonb(r) order by r.rating desc) from (
    select m.id,m.name,m.api_model as version,m.rating,m.wins,m.losses,m.ties,m.bad,
    (select count(*) from public.arena_generations g where g.model_id=m.id) as battles
-   from public.arena_models m) r),'[]'::jsonb),
+   from public.arena_models m where m.canonical_id is null) r),'[]'::jsonb),
  'topJokes',coalesce((select jsonb_agg(to_jsonb(r)) from (
    select g.id,g.setup,g.punchline,m.name as model,m.api_model as version,b.target,
      count(*) filter(where (v.choice='left' and v.left_id=g.id) or (v.choice='right' and v.right_id=g.id)) as wins,
@@ -206,11 +228,11 @@ language sql stable security definer set search_path = '' as $$
    join public.arena_battles b on b.id=g.battle_id join public.arena_votes v on v.battle_id=b.id
    where (b.status='closed' or (b.status='ready' and b.closes_at<=now()))
    group by g.id,m.id,b.id
-   having count(*) filter(where v.choice in ('left','right'))>=3 and
+   having count(*) filter(where v.choice in ('left','right'))>=2 and
      count(*) filter(where (v.choice='left' and v.left_id=g.id) or (v.choice='right' and v.right_id=g.id))>count(*) filter(where v.choice in ('left','right'))/2.0
    order by score desc,decisive desc,b.completed_at desc limit 12) r),'[]'::jsonb),
  'stats',jsonb_build_object('battles',(select count(*) from public.arena_battles where status in ('ready','closed')),
- 'votes',(select count(*) from public.arena_votes),'open',(select count(*) from public.arena_battles where status='ready' and closes_at>now() and votes<5)))
+ 'votes',(select count(*) from public.arena_votes),'open',(select count(*) from public.arena_battles where status='ready' and closes_at>now() and votes<3)))
 $$;
 
 create or replace function public.arena_request(p_request uuid) returns jsonb
@@ -235,11 +257,8 @@ $$;
 revoke all on function public.arena_reserve(uuid,uuid,text,text,text,text) from public,anon,authenticated;
 revoke all on function public.arena_finish(uuid,jsonb,text) from public,anon,authenticated;
 grant execute on function public.arena_reserve(uuid,uuid,text,text,text,text),public.arena_finish(uuid,jsonb,text) to service_role;
-revoke all on function public.arena_quota(),public.arena_battle(uuid,uuid),public.arena_vote(uuid,text),public.arena_history(),public.arena_request(uuid) from public,anon;
-grant execute on function public.arena_quota(),public.arena_battle(uuid,uuid),public.arena_vote(uuid,text),public.arena_history(),public.arena_request(uuid) to authenticated;
+revoke all on function public.arena_quota(),public.arena_battle(uuid,uuid[]),public.arena_vote(uuid,text),public.arena_history(),public.arena_request(uuid) from public,anon;
+grant execute on function public.arena_quota(),public.arena_battle(uuid,uuid[]),public.arena_vote(uuid,text),public.arena_history(),public.arena_request(uuid) to authenticated;
 revoke all on function public.arena_public() from public;
 grant execute on function public.arena_public() to anon,authenticated;
 commit;
-
--- Enable only after keys/models and finite limits are configured on the server:
--- update public.arena_limits set enabled=true, daily_attempts=20, total_attempts=100 where id=true;

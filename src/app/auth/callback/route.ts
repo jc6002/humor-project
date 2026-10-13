@@ -13,6 +13,8 @@ export async function GET(request: Request) {
   const { data, error } = await supabase.auth.exchangeCodeForSession(code);
 
   if (error || !data.user) {
+    // Log only the diagnostic category; never log authorization codes or tokens.
+    console.error('oauth_exchange_failed', {name:error?.name,code:error?.code,status:error?.status,missingVerifier:error?.message.toLowerCase().includes('verifier')});
     return NextResponse.redirect(new URL("/auth/auth-code-error", requestUrl.origin));
   }
 
