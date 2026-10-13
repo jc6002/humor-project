@@ -2,7 +2,13 @@ import 'server-only';
 import { createHash } from 'node:crypto';
 
 export class ProviderError extends Error {
-  constructor(public provider:string,public code:string){super(`${provider}_${code}`);}
+  provider: string;
+  code: string;
+  constructor(provider: string, code: string) {
+    super(`${provider}_${code}`);
+    this.provider = provider;
+    this.code = code;
+  }
 }
 
 export function providerFailure(error:unknown,provider:string) {
@@ -59,15 +65,12 @@ export async function generateJoke(provider:'openai'|'gemini',prompt:string,mode
     additionalProperties:false
   };
 
-  const isGemini3=model.includes('gemini-3');
-  const geminiThinking=isGemini3?{thinkingLevel:'low'}:{thinkingBudget:128};
-
   const body=provider==='openai'
     ? {model,input:prompt,max_output_tokens:400,reasoning:{effort:'none'},store:false,text:{format:{type:'json_schema',name:'joke',strict:true,schema}}}
     : {
         contents:[{parts:[{text:prompt}]}],
         generationConfig:{
-          maxOutputTokens:400,
+          maxOutputTokens:1000,
           responseMimeType:'application/json',
           responseSchema:{
             type:'OBJECT',
@@ -79,7 +82,7 @@ export async function generateJoke(provider:'openai'|'gemini',prompt:string,mode
             },
             required:['cliche_to_avoid','comic_twist','setup','punchline']
           },
-          thinkingConfig:geminiThinking
+          thinkingConfig:{thinkingBudget:0}
         }
       };
 
