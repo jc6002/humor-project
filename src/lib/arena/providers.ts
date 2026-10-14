@@ -82,7 +82,7 @@ export async function generateJoke(provider:'openai'|'gemini',prompt:string,mode
             },
             required:['cliche_to_avoid','comic_twist','setup','punchline']
           },
-          thinkingConfig:{thinkingBudget:0}
+          thinkingConfig:{thinkingLevel:'MINIMAL'}
         }
       };
 
