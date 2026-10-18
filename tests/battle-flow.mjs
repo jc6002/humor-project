@@ -52,7 +52,7 @@ const fresh={...previous,id:'fresh',choice:undefined};
   assert.equal(h.state[0].id,'fresh');
   assert.equal(h.calls.length,1);
   assert.equal(h.calls[0].path,'/api/arena/generate');
-  assert.deepEqual(JSON.parse(h.calls[0].options.body),{requestId:'test-request',skipIds:['old'],forceNew:false});
+  assert.deepEqual(JSON.parse(h.calls[0].options.body),{requestId:'test-request',skipIds:['old'],forceNew:false,isTrending:false});
   assert.ok(!h.nodes().some(n=>n.type==='select'||n.type==='textarea'));
 }
 
