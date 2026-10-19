@@ -1,65 +1,40 @@
-# AI Joke Arena — Week 6
+# AI Joke Arena — Week 5
 
-> **Product Proposal & Feedback Iteration Update**  
-> Course: COMS 6998: Designing for Generative AI (The Humor Project) • Fall 2026  
-> Author: Junjie Cheng (`jc6002@columbia.edu`)
+Week 5 evolution of the AI Joke Arena, upgrading model comedic capability, eliminating user friction with hybrid matchmaking, and accelerating Hall-of-Flame leaderboard graduation.
 
----
-
-## Overview
-
-AI Joke Arena is a gamified, crowdsourced blind evaluation benchmark for frontier LLM humor. Based on user and studio feedback documented in the **Product Topic Proposal** (*"AI Joke Arena: a crowd-sourced humor benchmark for frontier LLMs"*), Week 6 implements all planned feedback iterations, dynamic multi-model pairing, real-time internet trending topic sync, and multi-dimensional comedy analytics.
+> [!IMPORTANT]
+> **Week 4 / Week 5 Isolation Strategy**:
+> - **Week 4 (Immutable Course Submission)**: Preserved on branch `week4-arena` and deployed to Vercel project `humor-project-week4`. The submitted deployment URL remains completely frozen and untouched for course grading.
+> - **Week 5 (Current Evolution)**: Maintained on branch `week5-arena` (or separate Vercel project `humor-project-week5`). All Week 5 experiments, Prompt iterations, and matchmaking upgrades are isolated here without affecting Week 4.
 
 ---
 
-## What's New in Week 6
+## What's New in Week 5
 
-### 1. Custom Topic Challenge (`/arena`)
-- Evaluators can now break out of pre-set scenarios by typing into the **Custom Topic Input**:
-  > *"Have a topic in mind? Challenge both models..."*
-- Submitting an custom topic immediately orchestrates a fresh head-to-head blind roast battle between GPT and Gemini on user-supplied premises, campus inside jokes, or viral memes.
+1. **Gemini Model Upgrade (`gemini-3-flash-preview`)**:
+   - Upgraded from `gemini-3.1-flash-lite` to **`gemini-3-flash-preview`** (with `thinkingLevel: 'low'`), paired with `gpt-6-luna`.
+   - Max output tokens capped at 400 tokens per call, keeping dual-model generation fast and ultra-low cost (< \$0.08 for 100 battles).
 
-### 2. Scheduled Trending Premise Sync (`/api/arena/trending` & Daily Cron)
-- Replaces static jokes with real-time internet humor.
-- Integrates with the public **Hacker News Front-Page API** to fetch top tech/AI headlines daily.
-- Configured via [`vercel.json`](file:///d:/The%20Humor%20Project/humor-project/vercel.json) with automated daily cron (`0 13 * * *`), with fallback to a curated daily trending pool.
-- Users can click any trending headline pill on `/arena` to trigger an instant battle on breaking tech news.
+2. **25-Token Structured Schema Micro-CoT (`ai-roast-v3`)**:
+   - Instead of wordy setups, the model JSON schema requires `cliche_to_avoid` (< 8 words) and `comic_twist` (< 12 words) **before** outputting `setup` and `punchline`.
+   - This deterministic pre-planning forces models to bypass obvious clichés (*"context window"*, *"training data"*) and deliver sharp, punchy two-liners (15–42 words).
 
-### 3. Dynamic Multi-Model Pairing (4 Matching Combinations)
-- Solved the static single-model limitation (`GEMINI 3 preview vs GPT 6`).
-- Both OpenAI and Gemini now support comma-separated dynamic pools:
-  - **OpenAI Pool**: `gpt-6-luna`, `gpt-5.6-luna`
-  - **Gemini Pool**: `gemini-3-flash-preview`, `gemini-3.1-flash-lite`
-- Each new battle stochastically pairs one OpenAI model and one Gemini model with 50/50 cryptographic Left/Right card shuffling, producing 4 diverse matchup permutations:
-  1. `GPT-6 Luna` ⚔️ `Gemini 3 Flash Preview`
-  2. `GPT-6 Luna` ⚔️ `Gemini 3.1 Flash Lite`
-  3. `GPT-5.6 Luna` ⚔️ `Gemini 3 Flash Preview`
-  4. `GPT-5.6 Luna` ⚔️ `Gemini 3.1 Flash Lite`
-- Updated Gemini thinking configuration to `thinkingConfig: { thinkingLevel: 'MINIMAL' }`, preventing token truncation while maintaining fast latency.
+3. **Single-Click `Next battle →` with Hybrid Matchmaking**:
+   - Removed the separate "Generate" vs "Community Vote" buttons.
+   - When users click `Next battle →`, the server dynamically mixes:
+     - **60% weight**: Existing unvoted community battles (ordered by `votes desc, random()`) so under-voted jokes graduate quickly.
+     - **40% weight**: Fresh random AI roasts picked from a rich server-side scenario bank (`SCENARIOS`).
+     - **Automatic Fallback**: If quota is exhausted or a provider errors, the matchmaker gracefully falls back to community battles without error popups.
 
-### 4. Multi-Dimensional Leaderboard & Category Analytics (`/`)
-- Upgraded the homepage to showcase deep comparative comedy analytics:
-  - **Head-to-Head Family Win Share**: Visual split bar tracking decisive win percentage between GPT and Gemini families.
-  - **Crowd Telemetry**: Decisive picks, dead-heat ties, and competing snapshot breakdown.
-  - **Angle & Category Splits**: Real-time breakdown of votes, GPT wins, Gemini wins, ties, and groan rates across comedy angles (Refusals, Hallucinations, Coding Disasters, etc.).
-  - **Hall of Flame Showcase**: Community-curated top jokes graduating at 3 decisive votes.
+4. **Faster Hall-of-Flame Graduation (3-Vote Threshold)**:
+   - Battles close and graduate to the homepage at **3 votes** (reduced from 5), requiring at least 2 decisive votes and majority wins.
+   - Solves the cold-start problem where the homepage Hall of Flame previously remained empty.
 
-### 5. Week 6 Database Migration (`supabase/week6_migration.sql`)
-- Additive, 100% backward-compatible migration.
-- Adds `is_superadmin` and `email` to `public.profiles` with privilege escalation prevention triggers.
-- Enhances `arena_public()` RPC for category statistics.
-- Fixes `arena_history()` so community battles voted on by the user properly appear in `/my-battles`.
-
----
-
-## System Architecture
-
-```
-[ Unauthenticated Evaluator ] ──> Blind 1v1 Arena ──> Google OAuth
-[ Evaluator Casts Vote ]     ──> Reveals Identities + Live Elo Shifts (+8 / -8)
-[ 3-Vote Community Threshold]──> Graduates to Homepage "Hall of Flame"
-[ Admin Operations Suite ]   ──> humor-project-admin (Independent Repo & App)
-```
+5. **Zero-Cognitive-Friction Blind UI**:
+   - Removed manual topic-selection forms; full-width arena auto-loads a matchup on entry.
+   - **Neutral Pre-Vote Styling**: Fixed pre-vote CSS color leaks (Card A/B neutral before voting; GPT green and Gemini blue only reveal after voting).
+   - **Per-Vote Elo Delta**: Displays `(+8)` / `(-8)` next to model Elo scores upon voting.
+   - **3-Second Cooldown & Multi-Skip Array**: Cooldown reduced from 30s to 3s; `p_skip uuid[]` array prevents infinite skipping loops.
 
 ---
 
@@ -69,13 +44,11 @@ AI Joke Arena is a gamified, crowdsourced blind evaluation benchmark for frontie
    ```bash
    npm install
    ```
-
 2. Copy environment template:
    ```bash
    cp .env.example .env.local
    ```
-
-3. Configure credentials in `.env.local`:
+3. Set your credentials in `.env.local`:
    ```env
    SUPABASE_URL=https://your-project.supabase.co
    SUPABASE_ANON_KEY=your-anon-key
@@ -84,16 +57,13 @@ AI Joke Arena is a gamified, crowdsourced blind evaluation benchmark for frontie
    OPENAI_API_KEY=sk-...
    GEMINI_API_KEY=AIza...
 
-   # Comma-separated model pools
-   OPENAI_MODEL=gpt-6-luna,gpt-5.6-luna
-   GEMINI_MODEL=gemini-3-flash-preview,gemini-3.1-flash-lite
+   OPENAI_MODEL=gpt-6-luna
+   GEMINI_MODEL=gemini-3-flash-preview
    GENERATION_ENABLED=true
    ```
-
-4. Apply database migrations in Supabase SQL Editor:
-   - For fresh setup: `supabase/schema.sql`, `supabase/arena.sql`, `supabase/week6_migration.sql`.
-   - For existing Week 5 database: run `supabase/week6_migration.sql`.
-
+4. Database migrations:
+   - For fresh databases: Run `supabase/schema.sql`, then `supabase/arena.sql`.
+   - For existing databases: Run `supabase/model-identity.sql`, then apply the updated `supabase/arena.sql`.
 5. Start development server:
    ```bash
    npm run dev
@@ -101,17 +71,19 @@ AI Joke Arena is a gamified, crowdsourced blind evaluation benchmark for frontie
 
 ---
 
-## Verification & Testing
+## Verification & Tests
 
+Run isolated in-memory database and UI flow tests:
 ```bash
-node tests/battle-flow.mjs   # Tests hybrid matchmaker, custom topics, and error recovery
-npm run build                # Validates production Next.js compilation (Turbopack)
+npm run test:db        # Tests 3-vote graduation, model identity, Elo replay, RLS
+node tests/battle-flow.mjs # Tests single-click hybrid matchmaker, error recovery
+npm run build          # Verifies Next.js production compilation
 ```
 
 ---
 
-## Deployment & Repository Isolation
+## Deployment & Branching
 
-- **Week 4 (Frozen Submission)**: Branch `week4-arena` on Vercel project `humor-project-week4`.
-- **Week 5 / 6 (Joke Lab)**: Branch `main` and `week5-arena` on Vercel project `humor-project-week3`.
-- **Week 6 (Admin Panel)**: Dedicated repository and Vercel project `humor-project-admin`.
+- **Week 4 Branch**: `https://github.com/jc6002/humor-project/tree/week4-arena` (Frozen for submission)
+- **Week 5 Branch**: `https://github.com/jc6002/humor-project/tree/week5-arena`
+- **Vercel**: Deploy Week 5 as a separate project or preview linked to `week5-arena` to guarantee that the Week 4 submission URL remains completely immutable.
