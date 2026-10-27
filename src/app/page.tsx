@@ -1,15 +1,37 @@
 import Link from 'next/link';
 import { ArenaNav, ArenaFooter } from '@/components/arena-nav';
+import { HallOfFlame } from '@/components/hall-of-flame';
 import { publicArena } from '@/lib/arena/server';
+import { getTrendingTopics } from '@/lib/arena/trending';
 
 export const dynamic = 'force-dynamic';
 
-export default async function Home() {
-  const { data, available } = await publicArena();
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<{ authError?: string }>;
+}) {
+  const [{ authError }, { data, available }, trendingFeed] = await Promise.all([
+    searchParams,
+    publicArena(),
+    getTrendingTopics(true),
+  ]);
+
   return (
     <div className="site-shell">
       <ArenaNav />
       <main>
+        {authError === 'domain_restricted' && (
+          <p className="error-message" role="alert" style={{ marginTop: 22 }}>
+            Sign-in restricted: your account’s email domain is not currently in the Allowed Signup Domains list or Whitelisted E-mail Addresses. Contact an administrator to request access.
+          </p>
+        )}
+        {authError === 'signin' && (
+          <p className="error-message" role="alert" style={{ marginTop: 22 }}>
+            Google sign-in could not be started right now. Please try again.
+          </p>
+        )}
+
         <section className="home-intro">
           <div>
             <p className="eyebrow">
@@ -23,7 +45,7 @@ export default async function Home() {
             <p className="intro-copy">
               GPT and Gemini go head-to-head in anonymous two-liner comedy battles.
               <br />
-              You vote on the funnier punchline before model identities are revealed.
+              You vote on the funnier punchline before model identities and micro-thoughts are revealed.
             </p>
             <div className="hero-actions">
               <Link href="/arena" className="button">
@@ -74,6 +96,7 @@ export default async function Home() {
                   <th scope="col">ELO SCORE</th>
                   <th scope="col">WIN / LOSS / TIE</th>
                   <th scope="col">BATTLES</th>
+                  <th scope="col">AVG LATENCY</th>
                   <th scope="col">WIN RATE</th>
                 </tr>
               </thead>
@@ -110,6 +133,9 @@ export default async function Home() {
                             {m.wins} / {m.losses} / {m.ties}
                           </td>
                           <td>{m.battles}</td>
+                          <td className="record">
+                            {m.avg_latency_ms ? `${(m.avg_latency_ms / 1000).toFixed(2)}s` : '—'}
+                          </td>
                           <td>
                             <span className={`status-pill ${i === 0 ? 'pill-superadmin' : ''}`}>
                               {winRate}
@@ -135,6 +161,7 @@ export default async function Home() {
                         <td className="elo dim">—</td>
                         <td className="dim">—</td>
                         <td>0</td>
+                        <td className="dim">—</td>
                         <td>
                           <span className="status-pill">—</span>
                         </td>
@@ -144,7 +171,7 @@ export default async function Home() {
             </table>
           </div>
           <p className="ranking-note">
-            Ratings start at 1,000 and update after every blind vote (K = 32). Only GPT and Gemini snapshots compete in this arena.
+            Ratings start at 1,000 and update after every blind vote. Prompts are dynamically steered by our multi-chain Prompt Chain Mix.
           </p>
           {(() => {
             const gptWins = data.models
@@ -202,6 +229,50 @@ export default async function Home() {
               </div>
             );
           })()}
+
+          {data.categoryStats && data.categoryStats.length > 0 && (
+            <div className="analytics-card" style={{ marginTop: 18 }}>
+              <div className="custom-topic-header">
+                <div>
+                  <p className="eyebrow" style={{ marginBottom: 6 }}>
+                    COMEDY ANGLE BREAKDOWN
+                  </p>
+                  <h3>Which model wins each humor scenario?</h3>
+                </div>
+                <span className="meta-label">Decisive wins &amp; crowd groan rate by angle</span>
+              </div>
+              <div className="category-grid">
+                {data.categoryStats.slice(0, 6).map((c) => {
+                  const dec = c.gpt_wins + c.gemini_wins;
+                  const gPct = dec > 0 ? Math.round((c.gpt_wins / dec) * 100) : 50;
+                  const groanPct = c.total_votes > 0 ? Math.round((c.groans / c.total_votes) * 100) : 0;
+                  return (
+                    <div className="category-stat-card" key={c.angle}>
+                      <div className="roast-card-top">
+                        <strong style={{ color: 'var(--foreground)', fontFamily: 'var(--font-sans)', fontSize: 14 }}>
+                          {c.angle}
+                        </strong>
+                        <span>{c.total_votes} votes</span>
+                      </div>
+                      <div className="win-share-bar" style={{ height: 26, fontSize: 11 }}>
+                        <div className="win-share-gpt" style={{ width: `${gPct}%` }}>
+                          GPT {c.gpt_wins}W
+                        </div>
+                        <div className="win-share-gemini" style={{ width: `${100 - gPct}%` }}>
+                          Gemini {c.gemini_wins}W
+                        </div>
+                      </div>
+                      <div className="roast-card-top" style={{ fontSize: 11 }}>
+                        <span>{c.ties} ties</span>
+                        <span>Groan rate: {groanPct}%</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {!available && (
             <p className="notice">The arena is being prepared. Rankings will appear once the first real battles are ready.</p>
           )}
@@ -215,45 +286,38 @@ export default async function Home() {
               </p>
               <h2 id="trending-heading">Today’s trending tech premises.</h2>
             </div>
-            <span className="meta-label">Daily Cron · HN Front Page &amp; Viral Tech</span>
+            <span className="meta-label">
+              {trendingFeed.source === 'hackernews_live'
+                ? `Live Hacker News Sync · ${trendingFeed.syncedAt}`
+                : 'Daily Trending Feed · HN & Tech'}
+            </span>
           </div>
           <div className="roast-grid">
-            {[
-              {
-                tag: 'Viral Tech News',
-                source: 'HN Front Page · Synced 09:00 EDT',
-                headline:
-                  'Developer ships "100% AI-written SaaS" on X; production database wiped 11 minutes later',
-              },
-              {
-                tag: 'AI Release Drama',
-                source: 'HN Front Page · Synced 09:00 EDT',
-                headline:
-                  'Tech giant announces 47th model naming scheme with three decimals and a Greek letter',
-              },
-              {
-                tag: 'Prompt Injection',
-                source: 'HN Front Page · Synced 09:00 EDT',
-                headline:
-                  'Startup replaces support with AI agent that gives 90% refunds on "ignore previous instructions"',
-              },
-              {
-                tag: 'Campus & Engineering',
-                source: 'Trending Feed · Synced 09:00 EDT',
-                headline:
-                  'CS course bans AI autocomplete; students rediscover that arrays are 0-indexed',
-              },
-            ].map((item, idx) => (
-              <article className="trending-card" key={idx}>
+            {trendingFeed.topics.map((item) => (
+              <article className="trending-card" key={item.id}>
                 <div className="roast-card-top">
                   <span className="target-tag">{item.tag}</span>
-                  <span>{item.source}</span>
+                  <span>
+                    {item.source} · {item.syncedAt}
+                  </span>
                 </div>
                 <p className="trending-headline">“{item.headline}”</p>
                 <div className="roast-card-bottom" style={{ paddingTop: 14 }}>
-                  <span className="meta-label">Pitch this headline to GPT vs. Gemini</span>
+                  {item.url ? (
+                    <a
+                      href={item.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-link"
+                      style={{ fontSize: 12 }}
+                    >
+                      Source story ↗
+                    </a>
+                  ) : (
+                    <span className="meta-label">Pitch this headline to GPT vs. Gemini</span>
+                  )}
                   <Link
-                    href={`/arena?topic=${encodeURIComponent(item.headline)}`}
+                    href={`/arena?topic=${encodeURIComponent(item.headline)}&trending=1`}
                     className="button button-small button-outline"
                   >
                     Roast this headline ↗
@@ -263,7 +327,7 @@ export default async function Home() {
             ))}
           </div>
           <p className="ranking-note">
-            Instead of naive web searches for generic &ldquo;jokes&rdquo; (which return stale SEO dad-joke listicles), our scheduled sync pulls live tech/AI headlines and converts them into fresh blind battle premises.
+            Synced automatically from live Hacker News front-page stories so GPT and Gemini roast real breaking tech news rather than stale SEO joke lists.
           </p>
         </section>
 
@@ -277,46 +341,7 @@ export default async function Home() {
               Judge a blind battle ↗
             </Link>
           </div>
-          {data.topJokes.length ? (
-            <div className="roast-grid">
-              {data.topJokes.map((j, i) => (
-                <article className="roast-card" key={j.id}>
-                  <div className="roast-card-top">
-                    <span>#{String(i + 1).padStart(2, '0')}</span>
-                    <span className="target-tag">
-                      {j.angle || (j.target === 'Custom Topic' ? 'Custom challenge' : 'Tech roast')}
-                    </span>
-                  </div>
-                  <p className="joke-setup">{j.setup}</p>
-                  <p className="joke-punchline">{j.punchline}</p>
-                  <div className="roast-card-bottom">
-                    <span>
-                      Written by <strong>{j.model}</strong>
-                      <small>{j.version}</small>
-                    </span>
-                    <span className="status-pill">
-                      {j.wins}/{j.decisive} wins ({Math.round((j.wins / Math.max(1, j.decisive)) * 100)}%)
-                    </span>
-                  </div>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <div className="empty-roasts">
-              <span className="empty-symbol">“</span>
-              <div>
-                <h3>The hall of flame is warming up.</h3>
-                <p>
-                  Top roasts appear after a battle earns decisive community votes.
-                  <br />
-                  Help the first punchline make the cut.
-                </p>
-              </div>
-              <Link className="button button-outline" href="/arena">
-                Cast your vote ↗
-              </Link>
-            </div>
-          )}
+          <HallOfFlame jokes={data.topJokes} />
         </section>
       </main>
       <ArenaFooter />

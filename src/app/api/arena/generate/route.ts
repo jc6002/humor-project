@@ -1,5 +1,11 @@
 import { adminClient, session, checkOrigin, failure, UUID } from '@/lib/arena/server';
-import { buildPrompt, generateJoke, generationConfigured, providerFailure } from '@/lib/arena/providers';
+import {
+  ProviderError,
+  generateJoke,
+  generationConfigured,
+  providerFailure,
+  resolveDynamicGenerationPlan,
+} from '@/lib/arena/providers';
 import { pickRandomScenario } from '@/lib/arena/types';
 
 export const maxDuration = 60;
@@ -67,8 +73,20 @@ export async function POST(request: Request) {
         }
       : pickRandomScenario();
 
-    const prompt = buildPrompt(scenario.target, scenario.angle, scenario.context);
     const admin = adminClient();
+    const plan = await resolveDynamicGenerationPlan(admin, scenario.target, scenario.angle, scenario.context);
+
+    if (plan.disabledProviders && plan.disabledProviders.length > 0) {
+      if (!isCustom && poolBattle) {
+        return Response.json(
+          { battle: { ...poolBattle, source: 'pool' }, quota },
+          { headers: { 'Cache-Control': 'no-store' } }
+        );
+      }
+      throw new Error(
+        `Live generation is paused because provider (${plan.disabledProviders.join(', ')}) is currently disabled.`
+      );
+    }
 
     const { data: reservation, error: resError } = await admin.rpc('arena_reserve', {
       p_user: user.id,
@@ -76,7 +94,7 @@ export async function POST(request: Request) {
       p_target: scenario.target,
       p_angle: scenario.angle,
       p_context: scenario.context,
-      p_prompt: prompt,
+      p_prompt: plan.prompt,
     });
 
     if (resError) {
@@ -90,22 +108,102 @@ export async function POST(request: Request) {
     }
 
     if (!reservation.existing) {
+      // Tag the battle with the selected Prompt Chain for Week 7 Observability
+      if (plan.chainId || plan.chainName) {
+        await admin
+          .from('arena_battles')
+          .update({
+            prompt_chain_id: plan.chainId,
+            prompt_chain_name: plan.chainName,
+          })
+          .eq('id', reservation.id);
+      }
+
       const outcomes = await Promise.allSettled([
-        generateJoke('openai', prompt),
-        generateJoke('gemini', prompt),
+        generateJoke('openai', plan.prompt, plan.openaiModelOverride, {
+          maxTokens: plan.openaiMaxTokens,
+          promptChainName: plan.chainName,
+        }),
+        generateJoke('gemini', plan.prompt, plan.geminiModelOverride, {
+          maxTokens: plan.geminiMaxTokens,
+          promptChainName: plan.chainName,
+        }),
       ]);
+
       const failures = outcomes.flatMap((result, i) =>
         result.status === 'rejected' ? [providerFailure(result.reason, i === 0 ? 'openai' : 'gemini')] : []
       );
       const failed = failures.length > 0;
       const outputs = outcomes.flatMap((result) => (result.status === 'fulfilled' ? [result.value] : []));
       if (failed) console.error('arena_generation_failed', { battleId: reservation.id, codes: failures.map((f) => f.code) });
+
       const { error: saveError } = await admin.rpc('arena_finish', {
         p_battle: reservation.id,
         p_outputs: outputs,
         p_error: failed ? failures.map((f) => f.code).join(',') : null,
       });
       if (saveError) throw new Error('The result could not be saved. Check your history before retrying.');
+
+      // Record raw LLM observability traces (both successes and failures) into public.llm_responses
+      try {
+        const { data: savedGens } = await admin
+          .from('arena_generations')
+          .select('id, setup, punchline')
+          .eq('battle_id', reservation.id);
+
+        const traceRows = outcomes.map((result, idx) => {
+          const prov = idx === 0 ? 'openai' : 'gemini';
+          if (result.status === 'fulfilled') {
+            const val = result.value;
+            const matchedGen = (savedGens ?? []).find(
+              (g: any) => g.setup === val.setup && g.punchline === val.punchline
+            );
+            return {
+              battle_id: reservation.id,
+              generation_id: matchedGen?.id ?? null,
+              request_id: requestId,
+              provider: val.provider,
+              model: val.model,
+              prompt_chain_name: plan.chainName,
+              prompt_text: plan.prompt,
+              raw_response_text: val.rawResponseText,
+              parsed_cliche_to_avoid: val.clicheToAvoid,
+              parsed_comic_twist: val.comicTwist,
+              parsed_setup: val.setup,
+              parsed_punchline: val.punchline,
+              status: 'success',
+              http_status: val.httpStatus,
+              latency_ms: val.latencyMs,
+              input_tokens: val.inputTokens,
+              output_tokens: val.outputTokens,
+              reasoning_tokens: val.reasoningTokens,
+              provider_request_id: val.requestId,
+              usage: val.usage ?? {},
+            };
+          }
+          const err = result.reason;
+          const pErr = err instanceof ProviderError ? err : null;
+          return {
+            battle_id: reservation.id,
+            generation_id: null,
+            request_id: requestId,
+            provider: prov,
+            model: pErr?.attemptedModel ?? (prov === 'openai' ? 'openai' : 'gemini'),
+            prompt_chain_name: plan.chainName,
+            prompt_text: plan.prompt,
+            raw_response_text: pErr?.rawResponseText ?? null,
+            status: 'error',
+            http_status: pErr?.httpStatus ?? null,
+            error_message: providerFailure(err, prov).code,
+            latency_ms: pErr?.latencyMs ?? null,
+            usage: {},
+          };
+        });
+        await admin.from('llm_responses').insert(traceRows);
+      } catch {
+        // Non-blocking if observability table is not yet migrated
+      }
+
       if (failed) {
         if (!isCustom && poolBattle) {
           const { data: updatedQuota } = await db.rpc('arena_quota');

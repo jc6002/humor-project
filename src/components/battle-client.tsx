@@ -2,45 +2,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import type { Battle, Quota } from '@/lib/arena/types';
-
-type TrendingTopic = {
-  id: string;
-  headline: string;
-  tag: string;
-  source: string;
-  syncedAt: string;
-};
-
-const DEFAULT_TRENDING: TrendingTopic[] = [
-  {
-    id: 'trend-1',
-    headline: 'Developer ships "100% AI-written SaaS" on X; database wiped 11 minutes later',
-    tag: 'Viral Tech',
-    source: 'HN Front Page',
-    syncedAt: 'Synced today',
-  },
-  {
-    id: 'trend-2',
-    headline: 'Tech giant announces 47th model naming scheme with three decimals and a Greek letter',
-    tag: 'AI Naming',
-    source: 'HN Front Page',
-    syncedAt: 'Synced today',
-  },
-  {
-    id: 'trend-3',
-    headline: 'Startup replaces support with AI agent that gives 90% refunds on "ignore previous instructions"',
-    tag: 'Prompt Injection',
-    source: 'HN Front Page',
-    syncedAt: 'Synced today',
-  },
-  {
-    id: 'trend-4',
-    headline: 'CS course bans AI autocomplete; students rediscover that arrays are 0-indexed',
-    tag: 'Campus Tech',
-    source: 'Trending Feed',
-    syncedAt: 'Synced today',
-  },
-];
+import type { TrendingTopic } from '@/lib/arena/trending';
 
 type Props = {
   signedIn: boolean;
@@ -48,6 +10,9 @@ type Props = {
   initialQuota: Quota | null;
   initialBattle: Battle | null;
   initialTopic?: string;
+  initialIsTrending?: boolean;
+  initialTrending: TrendingTopic[];
+  initialTrendSource: string;
   available: boolean;
 };
 
@@ -69,16 +34,19 @@ export function BattleClient({
   initialQuota,
   initialBattle,
   initialTopic,
+  initialIsTrending,
+  initialTrending,
+  initialTrendSource,
   available,
 }: Props) {
   const [battle, setBattle] = useState<Battle | null>(initialBattle);
   const [quota, setQuota] = useState<Quota | null>(initialQuota);
   const [busy, setBusy] = useState(false);
   const [syncingTrends, setSyncingTrends] = useState(false);
-  const [trending, setTrending] = useState<TrendingTopic[]>(DEFAULT_TRENDING);
-  const [trendSourceLabel, setTrendSourceLabel] = useState('Daily Scheduled Sync · HN & Tech Headlines');
+  const [trending, setTrending] = useState<TrendingTopic[]>(initialTrending);
+  const [trendSourceLabel, setTrendSourceLabel] = useState(initialTrendSource);
   const [error, setError] = useState('');
-  const [customTopic, setCustomTopic] = useState('');
+  const [customTopic, setCustomTopic] = useState(initialTopic && !signedIn ? initialTopic : '');
   const [skippedIds, setSkippedIds] = useState<string[]>([]);
   const autoStarted = useRef(false);
   const topicTriggered = useRef(false);
@@ -98,6 +66,10 @@ export function BattleClient({
     return () => clearInterval(timer);
   }, [signedIn, available]);
 
+  function redirectGuestToSignIn(nextPath: string) {
+    window.location.href = `/auth/signin?next=${encodeURIComponent(nextPath)}`;
+  }
+
   const nextBattle = useCallback(
     async (opts?: {
       skipCurrent?: boolean;
@@ -105,7 +77,14 @@ export function BattleClient({
       customTopic?: string;
       isTrending?: boolean;
     }) => {
-      if (!signedIn || !available) return;
+      if (!signedIn) {
+        const dest = opts?.customTopic
+          ? `/arena?topic=${encodeURIComponent(opts.customTopic)}${opts?.isTrending ? '&trending=1' : ''}`
+          : '/arena';
+        redirectGuestToSignIn(dest);
+        return;
+      }
+      if (!available) return;
       setBusy(true);
       setError('');
       const nextSkips =
@@ -137,17 +116,26 @@ export function BattleClient({
   useEffect(() => {
     if (signedIn && available && initialTopic && !topicTriggered.current) {
       topicTriggered.current = true;
-      nextBattle({ skipCurrent: true, forceNew: true, customTopic: initialTopic, isTrending: true });
+      nextBattle({
+        skipCurrent: true,
+        forceNew: true,
+        customTopic: initialTopic,
+        isTrending: Boolean(initialIsTrending),
+      });
       return;
     }
     if (signedIn && available && !initialBattle && !autoStarted.current) {
       autoStarted.current = true;
       nextBattle();
     }
-  }, [signedIn, available, initialBattle, initialTopic, nextBattle]);
+  }, [signedIn, available, initialBattle, initialTopic, initialIsTrending, nextBattle]);
 
   async function vote(choice: 'left' | 'right' | 'tie' | 'bad') {
     if (!battle) return;
+    if (!signedIn) {
+      redirectGuestToSignIn(`/arena?id=${battle.id}`);
+      return;
+    }
     setBusy(true);
     setError('');
     try {
@@ -163,6 +151,10 @@ export function BattleClient({
   function handleCustomSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!customTopic.trim() || busy) return;
+    if (!signedIn) {
+      redirectGuestToSignIn(`/arena?topic=${encodeURIComponent(customTopic.trim())}`);
+      return;
+    }
     nextBattle({ skipCurrent: true, forceNew: true, customTopic: customTopic.trim() });
   }
 
@@ -175,8 +167,8 @@ export function BattleClient({
         setTrending(data.topics);
         setTrendSourceLabel(
           data.source === 'hackernews_live'
-            ? `Synced live from Hacker News API (${data.syncedAt})`
-            : 'Synced from Daily Trending Tech Pool'
+            ? `Live Hacker News Sync (${data.syncedAt})`
+            : 'Daily Trending Tech Pool'
         );
       }
     } catch {
@@ -187,78 +179,97 @@ export function BattleClient({
   }
 
   const ready = battle?.status === 'ready' && battle.left && battle.right;
+  const signInHref = `/auth/signin?next=${encodeURIComponent(
+    battle?.id ? `/arena?id=${battle.id}` : initialTopic ? `/arena?topic=${encodeURIComponent(initialTopic)}` : '/arena'
+  )}`;
 
   return (
     <div className="arena-stage">
-      {signedIn && (
-        <div className="challenge-panel">
-          <form className="custom-topic-bar" onSubmit={handleCustomSubmit}>
-            <span className="custom-topic-label">CUSTOM CHALLENGE</span>
-            <input
-              type="text"
-              className="custom-topic-input"
-              placeholder="Optional: type your own comedy prompt for GPT & Gemini (e.g., 'Columbia finals week at 4 AM')…"
-              maxLength={240}
-              value={customTopic}
-              onChange={(e) => setCustomTopic(e.target.value)}
-              disabled={busy}
-            />
-            {quota && (
-              <span className="meta-label" title="Hourly custom generation quota">
-                {quota.remaining}/5 left
-              </span>
-            )}
-            <button
-              type="submit"
-              className="button button-small"
-              disabled={busy || !customTopic.trim() || !configured || (quota !== null && quota.remaining <= 0)}
-            >
-              Generate roast ↗
-            </button>
-          </form>
-
-          <div className="trending-bar" aria-label="Trending Headlines Pool">
-            <div className="trending-bar-header">
-              <span className="custom-topic-label">
-                <span className="live-dot" /> TRENDING TODAY · 1-CLICK HEADLINE ROAST
-              </span>
-              <div className="premise-badges">
-                <span className="meta-label">{trendSourceLabel}</span>
-                <button
-                  type="button"
-                  className="topic-chip"
-                  disabled={syncingTrends || busy}
-                  onClick={syncLiveHeadlines}
-                >
-                  {syncingTrends ? 'Syncing HN…' : '↻ Sync live headlines'}
-                </button>
-              </div>
-            </div>
-            <div className="trending-chips">
-              {trending.map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  className="trending-chip"
-                  disabled={busy}
-                  onClick={() =>
-                    nextBattle({
-                      skipCurrent: true,
-                      forceNew: true,
-                      customTopic: t.headline,
-                      isTrending: true,
-                    })
-                  }
-                >
-                  <span className="trending-chip-tag">{t.tag}</span>
-                  <span className="trending-chip-text">{t.headline}</span>
-                  <span className="trending-chip-arrow">Roast ↗</span>
-                </button>
-              ))}
-            </div>
+      {!signedIn && (
+        <div className="arena-statusbar" style={{ marginBottom: 14 }}>
+          <div className="status-left">
+            <span className="live-dot" />
+            <span>
+              GUEST PREVIEW MODE · READ REAL BLIND MATCHUPS BELOW — SIGN IN WITH GOOGLE WHEN READY TO VOTE OR GENERATE
+            </span>
           </div>
+          <a className="button button-small" href={signInHref}>
+            Sign in to vote ↗
+          </a>
         </div>
       )}
+
+      <div className="challenge-panel">
+        <form className="custom-topic-bar" onSubmit={handleCustomSubmit}>
+          <span className="custom-topic-label">CUSTOM CHALLENGE</span>
+          <input
+            type="text"
+            className="custom-topic-input"
+            placeholder="Optional: type your own comedy prompt for GPT & Gemini (e.g., 'Columbia finals week at 4 AM')…"
+            maxLength={240}
+            value={customTopic}
+            onChange={(e) => setCustomTopic(e.target.value)}
+            disabled={busy}
+          />
+          {signedIn && quota && (
+            <span className="meta-label" title="Hourly custom generation quota">
+              {quota.remaining}/5 left
+            </span>
+          )}
+          <button
+            type="submit"
+            className="button button-small"
+            disabled={
+              busy ||
+              !customTopic.trim() ||
+              (signedIn && (!configured || (quota !== null && quota.remaining <= 0)))
+            }
+          >
+            {signedIn ? 'Generate roast ↗' : 'Sign in & roast ↗'}
+          </button>
+        </form>
+
+        <div className="trending-bar" aria-label="Trending Headlines Pool">
+          <div className="trending-bar-header">
+            <span className="custom-topic-label">
+              <span className="live-dot" /> TRENDING TODAY · 1-CLICK HEADLINE ROAST
+            </span>
+            <div className="premise-badges">
+              <span className="meta-label">{trendSourceLabel}</span>
+              <button
+                type="button"
+                className="topic-chip"
+                disabled={syncingTrends || busy}
+                onClick={syncLiveHeadlines}
+              >
+                {syncingTrends ? 'Syncing HN…' : '↻ Sync live headlines'}
+              </button>
+            </div>
+          </div>
+          <div className="trending-chips">
+            {trending.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                className="trending-chip"
+                disabled={busy}
+                onClick={() =>
+                  nextBattle({
+                    skipCurrent: true,
+                    forceNew: true,
+                    customTopic: t.headline,
+                    isTrending: true,
+                  })
+                }
+              >
+                <span className="trending-chip-tag">{t.tag}</span>
+                <span className="trending-chip-text">{t.headline}</span>
+                <span className="trending-chip-arrow">{signedIn ? 'Roast ↗' : 'Sign in & roast ↗'}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
 
       {error && (
         <p role="alert" className="error-message">
@@ -273,7 +284,7 @@ export function BattleClient({
           <p>
             {customTopic
               ? `GPT and Gemini are both writing a joke on "${customTopic}"…`
-              : 'Loading the next anonymous GPT vs. Gemini matchup.'}
+              : 'Selecting a Prompt Chain from the live mix and loading an anonymous GPT vs. Gemini matchup.'}
           </p>
         </div>
       ) : ready ? (
@@ -281,17 +292,24 @@ export function BattleClient({
           <div className="battle-heading">
             <span className="target-tag">{battle.angle || 'Tech comedy'}</span>
             {battle.context && <span className="scenario-text">“{battle.context}”</span>}
-            {battle.source && (
-              <span className="status-pill" style={{ marginLeft: 'auto' }}>
-                {battle.angle === 'Trending news roast'
-                  ? 'Trending headline'
-                  : battle.source === 'custom'
-                    ? 'Custom topic'
-                    : battle.source === 'fresh'
-                      ? 'Freshly generated'
-                      : 'Community pool'}
-              </span>
-            )}
+            <div className="premise-badges" style={{ marginLeft: 'auto' }}>
+              {battle.choice && battle.flavor && (
+                <span className="status-pill">Chain: {battle.flavor}</span>
+              )}
+              {(battle.source || battle.guestPreview) && (
+                <span className="status-pill">
+                  {battle.guestPreview
+                    ? 'Community blind preview'
+                    : battle.angle === 'Trending news roast'
+                      ? 'Trending headline'
+                      : battle.source === 'custom'
+                        ? 'Custom topic'
+                        : battle.source === 'fresh'
+                          ? 'Freshly generated'
+                          : 'Community pool'}
+                </span>
+              )}
+            </div>
           </div>
 
           <div className="battle-pair">
@@ -339,11 +357,29 @@ export function BattleClient({
                           <span className={`elo-delta ${deltaClass}`}> ({deltaText})</span>
                         )}
                       </div>
-                      <small>{joke.version}</small>
+                      <small>
+                        {joke.version}
+                        {joke.latencyMs ? ` · ${(joke.latencyMs / 1000).toFixed(2)}s` : ''}
+                        {joke.flavor ? ` · ${joke.flavor}` : ''}
+                      </small>
+                      {(joke.clicheToAvoid || joke.comicTwist) && (
+                        <div className="micro-cot-box">
+                          {joke.clicheToAvoid && (
+                            <div>
+                              <span>Avoided cliché:</span> “{joke.clicheToAvoid}”
+                            </div>
+                          )}
+                          {joke.comicTwist && (
+                            <div>
+                              <span>Planned twist:</span> “{joke.comicTwist}”
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <button className="button" disabled={busy} onClick={() => vote(side)}>
-                      {i === 0 ? 'A' : 'B'} is funnier
+                      {signedIn ? `${i === 0 ? 'A' : 'B'} is funnier` : `Sign in to vote ${i === 0 ? 'A' : 'B'} ↗`}
                     </button>
                   )}
                 </article>
@@ -371,13 +407,13 @@ export function BattleClient({
           ) : (
             <div className="secondary-votes">
               <button disabled={busy} onClick={() => vote('tie')}>
-                It’s a tie
+                {signedIn ? 'It’s a tie' : 'Sign in · Tie'}
               </button>
               <button disabled={busy} onClick={() => vote('bad')}>
-                Both missed
+                {signedIn ? 'Both missed' : 'Sign in · Both missed'}
               </button>
               <button disabled={busy} onClick={() => nextBattle({ skipCurrent: true })}>
-                Skip →
+                {signedIn ? 'Skip →' : 'Sign in for more →'}
               </button>
             </div>
           )}
@@ -392,7 +428,7 @@ export function BattleClient({
               : 'Click below to get a blind matchup between GPT and Gemini.'}
           </p>
           {!signedIn ? (
-            <Link className="button" href="/auth/signin">
+            <Link className="button" href={signInHref}>
               Sign in with Google ↗
             </Link>
           ) : (

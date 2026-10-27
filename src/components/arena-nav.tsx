@@ -43,7 +43,7 @@ export function ArenaFooter() {
   return (
     <footer className="site-footer">
       <span>AI writes. Humans decide.</span>
-      <span>The Humor Project · Week 6</span>
+      <span>The Humor Project · Week 7</span>
       <Link href="/arena" className="text-link" style={{ fontSize: 12 }}>
         Enter Blind Arena ↗
       </Link>
